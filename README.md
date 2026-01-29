@@ -115,7 +115,7 @@ Example: `TWEET-a1b2c3-2: On the hidden cost of microservices`
 
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
-| Runtime | .NET 8 | Already have EmailParser, minimal footprint |
+| Runtime | .NET 10 | Minimal footprint, latest LTS |
 | Email | MailKit | Single lib for IMAP + SMTP, well-maintained |
 | LLM | Anthropic SDK | Claude for style analysis + generation |
 | X API | Raw HttpClient | OAuth 1.0a, no SDK needed for single endpoint |

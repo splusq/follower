@@ -11,7 +11,12 @@
       "Bash(timeout 3 dotnet run:*)",
       "Bash(gtimeout:*)",
       "Bash(make:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(brew install:*)",
+      "Bash(brew upgrade:*)",
+      "Bash(export DOTNET_ROOT=\"/opt/homebrew/opt/dotnet/libexec\")",
+      "Bash(export PATH=\"$DOTNET_ROOT:$PATH\")",
+      "Bash(dotnet:*)"
     ]
   }
 }

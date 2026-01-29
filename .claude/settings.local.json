@@ -16,7 +16,8 @@
       "Bash(brew upgrade:*)",
       "Bash(export DOTNET_ROOT=\"/opt/homebrew/opt/dotnet/libexec\")",
       "Bash(export PATH=\"$DOTNET_ROOT:$PATH\")",
-      "Bash(dotnet:*)"
+      "Bash(dotnet:*)",
+      "Bash(xargs basename:*)"
     ]
   }
 }

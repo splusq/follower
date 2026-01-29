@@ -26,7 +26,8 @@ public class AgentOptions
     public string EmailUsername { get; set; } = "";
     public string EmailPassword { get; set; } = "";
 
-    // Anthropic
-    public string AnthropicApiKey { get; set; } = "";
-    public string AnthropicModel { get; set; } = "claude-sonnet-4-20250514";
+    // Azure OpenAI
+    public string AzureOpenAIEndpoint { get; set; } = "";
+    public string AzureOpenAIKey { get; set; } = "";
+    public string AzureOpenAIDeployment { get; set; } = "gpt-4o";
 }

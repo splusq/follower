@@ -1,29 +1,25 @@
-using Anthropic;
-using Anthropic.Models.Messages;
+using System.ClientModel;
+using Azure.AI.OpenAI;
 using Follower.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenAI.Chat;
 
 namespace Follower.Services;
 
 public class LlmService : ILlmService
 {
-    private readonly AnthropicClient _client;
-    private readonly AgentOptions _options;
+    private readonly ChatClient _chatClient;
     private readonly ILogger<LlmService> _logger;
 
     public LlmService(IOptions<AgentOptions> options, ILogger<LlmService> logger)
     {
-        _options = options.Value;
+        var opts = options.Value;
         _logger = logger;
 
-        // Set API key via environment variable (SDK reads from ANTHROPIC_API_KEY)
-        if (!string.IsNullOrEmpty(_options.AnthropicApiKey))
-        {
-            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", _options.AnthropicApiKey);
-        }
-
-        _client = new AnthropicClient();
+        var credential = new ApiKeyCredential(opts.AzureOpenAIKey);
+        var client = new AzureOpenAIClient(new Uri(opts.AzureOpenAIEndpoint), credential);
+        _chatClient = client.GetChatClient(opts.AzureOpenAIDeployment);
     }
 
     public async Task<string> AnalyzeStyleAsync(IEnumerable<string> examples, CancellationToken cancellationToken = default)
@@ -50,14 +46,12 @@ public class LlmService : ILlmService
             Provide a style guide that can be used to write new tweets matching this voice. Be specific and actionable.
             """;
 
-        var response = await _client.Messages.Create(new MessageCreateParams
-        {
-            Model = _options.AnthropicModel,
-            MaxTokens = 1024,
-            Messages = [new() { Role = Role.User, Content = prompt }]
-        }, cancellationToken);
+        var response = await _chatClient.CompleteChatAsync(
+            [new UserChatMessage(prompt)],
+            cancellationToken: cancellationToken
+        );
 
-        var result = ExtractText(response);
+        var result = response.Value.Content[0].Text;
         _logger.LogDebug("Generated style profile: {Length} chars", result.Length);
         return result;
     }
@@ -78,14 +72,12 @@ public class LlmService : ILlmService
             Write only the tweet text, nothing else. No quotes, no explanation.
             """;
 
-        var response = await _client.Messages.Create(new MessageCreateParams
-        {
-            Model = _options.AnthropicModel,
-            MaxTokens = 256,
-            Messages = [new() { Role = Role.User, Content = prompt }]
-        }, cancellationToken);
+        var response = await _chatClient.CompleteChatAsync(
+            [new UserChatMessage(prompt)],
+            cancellationToken: cancellationToken
+        );
 
-        var result = ExtractText(response).Trim();
+        var result = response.Value.Content[0].Text.Trim();
         _logger.LogInformation("Generated tweet: {Length} chars", result.Length);
         return result;
     }
@@ -109,27 +101,13 @@ public class LlmService : ILlmService
             Write only the refined tweet text, nothing else. No quotes, no explanation.
             """;
 
-        var response = await _client.Messages.Create(new MessageCreateParams
-        {
-            Model = _options.AnthropicModel,
-            MaxTokens = 256,
-            Messages = [new() { Role = Role.User, Content = prompt }]
-        }, cancellationToken);
+        var response = await _chatClient.CompleteChatAsync(
+            [new UserChatMessage(prompt)],
+            cancellationToken: cancellationToken
+        );
 
-        var result = ExtractText(response).Trim();
+        var result = response.Value.Content[0].Text.Trim();
         _logger.LogInformation("Refined tweet: {Length} chars", result.Length);
         return result;
-    }
-
-    private static string ExtractText(Message response)
-    {
-        foreach (var block in response.Content)
-        {
-            if (block.TryPickText(out var textBlock))
-            {
-                return textBlock.Text;
-            }
-        }
-        return "";
     }
 }

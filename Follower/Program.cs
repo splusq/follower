@@ -1,8 +1,12 @@
+using DotNetEnv;
 using Follower;
 using Follower.Configuration;
 using Follower.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+
+// Load .env file from project directory
+Env.Load();
 
 var builder = Host.CreateDefaultBuilder(args);
 

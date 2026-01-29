@@ -1,5 +1,9 @@
+using Follower.Configuration;
 using Follower.Services;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Moq;
 using Xunit;
 
 namespace Follower.Tests.Services;
@@ -7,42 +11,52 @@ namespace Follower.Tests.Services;
 public class LlmServiceTests
 {
     private readonly LlmService _sut;
+    private readonly Mock<IOptions<AgentOptions>> _optionsMock;
+    private readonly Mock<ILogger<LlmService>> _loggerMock;
 
     public LlmServiceTests()
     {
-        _sut = new LlmService();
+        _optionsMock = new Mock<IOptions<AgentOptions>>();
+        _optionsMock.Setup(x => x.Value).Returns(new AgentOptions
+        {
+            AnthropicApiKey = "test-key",
+            AnthropicModel = "claude-sonnet-4-20250514"
+        });
+        _loggerMock = new Mock<ILogger<LlmService>>();
+        _sut = new LlmService(_optionsMock.Object, _loggerMock.Object);
     }
 
-    [Fact]
-    public async Task AnalyzeStyleAsync_WhenCalled_ThrowsNotImplementedException()
+    [Fact(Skip = "Requires real API key")]
+    public async Task AnalyzeStyleAsync_WithExamples_ReturnsStyleProfile()
     {
         // Arrange
         var examples = new[] { "example tweet 1", "example tweet 2" };
 
         // Act
-        var act = () => _sut.AnalyzeStyleAsync(examples);
+        var result = await _sut.AnalyzeStyleAsync(examples);
 
         // Assert
-        await act.Should().ThrowAsync<NotImplementedException>();
+        result.Should().NotBeNullOrEmpty();
     }
 
-    [Fact]
-    public async Task GenerateTweetAsync_WhenCalled_ThrowsNotImplementedException()
+    [Fact(Skip = "Requires real API key")]
+    public async Task GenerateTweetAsync_WithNotesAndStyle_ReturnsTweet()
     {
         // Act
-        var act = () => _sut.GenerateTweetAsync("notes", "style profile");
+        var result = await _sut.GenerateTweetAsync("notes about AI", "casual tone");
 
         // Assert
-        await act.Should().ThrowAsync<NotImplementedException>();
+        result.Should().NotBeNullOrEmpty();
+        result.Length.Should().BeLessOrEqualTo(280);
     }
 
-    [Fact]
-    public async Task RefineTweetAsync_WhenCalled_ThrowsNotImplementedException()
+    [Fact(Skip = "Requires real API key")]
+    public async Task RefineTweetAsync_WithFeedback_ReturnsRefinedTweet()
     {
         // Act
-        var act = () => _sut.RefineTweetAsync("feedback", "current tweet", "style profile");
+        var result = await _sut.RefineTweetAsync("make it shorter", "This is a very long tweet", "casual tone");
 
         // Assert
-        await act.Should().ThrowAsync<NotImplementedException>();
+        result.Should().NotBeNullOrEmpty();
     }
 }

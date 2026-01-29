@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(tree:*)",
+      "Bash(git -C /Users/salman/git/follower status --porcelain)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet sln:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(timeout 3 dotnet run:*)",
+      "Bash(gtimeout:*)",
+      "Bash(make:*)",
+      "Bash(find:*)"
+    ]
+  }
+}

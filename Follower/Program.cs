@@ -1,0 +1,27 @@
+using Follower;
+using Follower.Configuration;
+using Follower.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+var builder = Host.CreateDefaultBuilder(args);
+
+builder.ConfigureServices((context, services) =>
+{
+    // Bind configuration
+    services.Configure<AgentOptions>(
+        context.Configuration.GetSection(AgentOptions.SectionName));
+
+    // Register services
+    services.AddSingleton<ILlmService, LlmService>();
+    services.AddSingleton<IEmailService, EmailService>();
+    services.AddSingleton<IStyleService, StyleService>();
+    services.AddSingleton<ITweetService, TweetService>();
+    services.AddSingleton<IXTwitterService, XTwitterService>();
+
+    // Register hosted service
+    services.AddHostedService<Worker>();
+});
+
+var host = builder.Build();
+await host.RunAsync();

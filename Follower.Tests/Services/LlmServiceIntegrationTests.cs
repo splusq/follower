@@ -1,5 +1,6 @@
 using DotNetEnv;
 using Follower.Configuration;
+using Follower.Models;
 using Follower.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -54,16 +55,22 @@ public class LlmServiceIntegrationTests
     {
         SkipIfNoCredentials();
 
-        // Arrange
-        var examples = new[]
+        // Arrange - each influencer has multiple tweets in the body
+        var influencers = new[]
         {
-            "Hot take: the best code is the code you don't write. Delete more, ship less, sleep better.",
-            "Everyone's building AI wrappers. Few are building AI infrastructure. Be the infrastructure.",
-            "Your startup doesn't need Kubernetes. It needs customers."
+            new InfluencerExample("Paul Graham", """
+                Hot take: the best code is the code you don't write. Delete more, ship less, sleep better.
+                Everyone's building AI wrappers. Few are building AI infrastructure. Be the infrastructure.
+                Your startup doesn't need Kubernetes. It needs customers.
+                """),
+            new InfluencerExample("DHH", """
+                Majestic monoliths beat microservice madness.
+                Rails is boring. Boring is good. Ship features, not infrastructure.
+                """)
         };
 
         // Act
-        var result = await _sut!.AnalyzeStyleAsync(examples);
+        var result = await _sut!.AnalyzeStyleAsync(influencers);
 
         // Assert
         result.Should().NotBeNullOrEmpty();

@@ -140,6 +140,21 @@ public class EmailService : IEmailService
 
     private async Task<IMailFolder?> GetFolderAsync(ImapClient client, string folderName, CancellationToken cancellationToken)
     {
+        // Check for special folders first (Drafts, Sent, etc.)
+        if (folderName.Equals("Drafts", StringComparison.OrdinalIgnoreCase) && client.GetFolder(SpecialFolder.Drafts) is { } drafts)
+        {
+            return drafts;
+        }
+        if (folderName.Equals("Sent", StringComparison.OrdinalIgnoreCase) && client.GetFolder(SpecialFolder.Sent) is { } sent)
+        {
+            return sent;
+        }
+        if (folderName.Equals("Archive", StringComparison.OrdinalIgnoreCase) && client.GetFolder(SpecialFolder.Archive) is { } archive)
+        {
+            return archive;
+        }
+
+        // Fall back to looking in personal namespace subfolders
         var personal = client.GetFolder(client.PersonalNamespaces[0]);
         var folders = await personal.GetSubfoldersAsync(false, cancellationToken);
 

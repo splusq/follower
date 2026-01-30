@@ -1,6 +1,7 @@
 using System.ClientModel;
 using Azure.AI.OpenAI;
 using Follower.Configuration;
+using Follower.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI.Chat;
@@ -22,17 +23,21 @@ public class LlmService : ILlmService
         _chatClient = client.GetChatClient(opts.AzureOpenAIDeployment);
     }
 
-    public async Task<string> AnalyzeStyleAsync(IEnumerable<string> examples, CancellationToken cancellationToken = default)
+    public async Task<string> AnalyzeStyleAsync(IEnumerable<InfluencerExample> influencers, CancellationToken cancellationToken = default)
     {
-        var exampleList = examples.ToList();
-        _logger.LogInformation("Analyzing style from {Count} examples", exampleList.Count);
+        var influencerList = influencers.ToList();
+        _logger.LogInformation("Analyzing style from {Count} influencers", influencerList.Count);
 
-        var examplesText = string.Join("\n\n---\n\n", exampleList.Select((e, i) => $"Example {i + 1}:\n{e}"));
+        var influencersText = string.Join("\n\n---\n\n", influencerList.Select(i => $"## {i.Name}\n{i.Tweets}"));
 
         var prompt = $"""
-            Analyze the following tweets and create a concise style guide that captures the author's voice.
+            Analyze tweets from the following influencers and create a unified style guide that blends their voices.
 
-            Focus on:
+            Each influencer section contains multiple example tweets (one per line).
+
+            {influencersText}
+
+            Create a style guide that captures the best elements from these influencers. Focus on:
             - Tone (casual, professional, witty, provocative, etc.)
             - Sentence structure and length preferences
             - Use of punctuation, capitalization, emoji
@@ -40,10 +45,7 @@ public class LlmService : ILlmService
             - How they open and close tweets
             - Their approach to technical vs accessible language
 
-            Tweets to analyze:
-            {examplesText}
-
-            Provide a style guide that can be used to write new tweets matching this voice. Be specific and actionable.
+            Provide a concise, actionable style guide for writing new tweets that blend these voices naturally.
             """;
 
         var response = await _chatClient.CompleteChatAsync(

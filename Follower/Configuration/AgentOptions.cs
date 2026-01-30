@@ -30,4 +30,10 @@ public class AgentOptions
     public string AzureOpenAIEndpoint { get; set; } = "";
     public string AzureOpenAIKey { get; set; } = "";
     public string AzureOpenAIDeployment { get; set; } = "gpt-4o";
+
+    // Twitter/X API (OAuth 1.0a)
+    public string TwitterApiKey { get; set; } = "";
+    public string TwitterApiSecret { get; set; } = "";
+    public string TwitterAccessToken { get; set; } = "";
+    public string TwitterAccessTokenSecret { get; set; } = "";
 }

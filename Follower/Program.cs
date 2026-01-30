@@ -6,7 +6,15 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 // Load .env file from project directory
-Env.Load();
+var envPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".env");
+if (File.Exists(envPath))
+{
+    Env.Load(envPath);
+}
+else if (File.Exists(".env"))
+{
+    Env.Load();
+}
 
 var builder = Host.CreateDefaultBuilder(args);
 
@@ -21,7 +29,7 @@ builder.ConfigureServices((context, services) =>
     services.AddSingleton<IEmailService, EmailService>();
     services.AddSingleton<IStyleService, StyleService>();
     services.AddSingleton<ITweetService, TweetService>();
-    services.AddSingleton<IXTwitterService, XTwitterService>();
+    services.AddHttpClient<IXTwitterService, XTwitterService>();
 
     // Register hosted service
     services.AddHostedService<Worker>();

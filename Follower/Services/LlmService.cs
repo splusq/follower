@@ -4,6 +4,7 @@ using Follower.Configuration;
 using Follower.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenAI;
 using OpenAI.Chat;
 
 namespace Follower.Services;
@@ -18,9 +19,24 @@ public class LlmService : ILlmService
         var opts = options.Value;
         _logger = logger;
 
-        var credential = new ApiKeyCredential(opts.AzureOpenAIKey);
-        var client = new AzureOpenAIClient(new Uri(opts.AzureOpenAIEndpoint), credential);
-        _chatClient = client.GetChatClient(opts.AzureOpenAIDeployment);
+        if (opts.LlmProvider.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("Using Ollama provider at {Endpoint} with model {Model}",
+                opts.OllamaEndpoint, opts.OllamaModel);
+
+            var client = new OpenAIClient(
+                new ApiKeyCredential("ollama"),
+                new OpenAIClientOptions { Endpoint = new Uri(opts.OllamaEndpoint) });
+            _chatClient = client.GetChatClient(opts.OllamaModel);
+        }
+        else
+        {
+            _logger.LogInformation("Using Azure OpenAI provider");
+
+            var credential = new ApiKeyCredential(opts.AzureOpenAIKey);
+            var client = new AzureOpenAIClient(new Uri(opts.AzureOpenAIEndpoint), credential);
+            _chatClient = client.GetChatClient(opts.AzureOpenAIDeployment);
+        }
     }
 
     public async Task<string> AnalyzeStyleAsync(IEnumerable<InfluencerExample> influencers, CancellationToken cancellationToken = default)

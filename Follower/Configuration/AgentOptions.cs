@@ -26,10 +26,17 @@ public class AgentOptions
     public string EmailUsername { get; set; } = "";
     public string EmailPassword { get; set; } = "";
 
+    // LLM Provider: "Azure" or "Ollama"
+    public string LlmProvider { get; set; } = "Azure";
+
     // Azure OpenAI
     public string AzureOpenAIEndpoint { get; set; } = "";
     public string AzureOpenAIKey { get; set; } = "";
     public string AzureOpenAIDeployment { get; set; } = "gpt-4o";
+
+    // Ollama (local)
+    public string OllamaEndpoint { get; set; } = "http://localhost:11434/v1";
+    public string OllamaModel { get; set; } = "llama3.2";
 
     // Twitter/X API (OAuth 1.0a)
     public string TwitterApiKey { get; set; } = "";

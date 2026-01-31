@@ -87,7 +87,7 @@ public class Worker : BackgroundService
         if (string.IsNullOrEmpty(quotedTweet))
         {
             _logger.LogWarning("Could not extract tweet from reply, skipping");
-            await _emailService.MoveToArchiveAsync(reply.Id, cancellationToken);
+            await _emailService.MoveToArchiveAsync(reply.Id, null, cancellationToken);
             return;
         }
 
@@ -119,7 +119,7 @@ public class Worker : BackgroundService
                 break;
         }
 
-        await _emailService.MoveToArchiveAsync(reply.Id, cancellationToken);
+        await _emailService.MoveToArchiveAsync(reply.Id, null, cancellationToken);
     }
 
     private async Task GenerateNewTweetAsync(CancellationToken cancellationToken)
@@ -138,7 +138,7 @@ public class Worker : BackgroundService
         var tweetDraft = await _tweetService.GenerateAsync(draft, style, cancellationToken);
 
         await SendApprovalEmailAsync(tweetDraft.Text, cancellationToken);
-        await _emailService.MoveToArchiveAsync(draft.Id, cancellationToken);
+        await _emailService.MoveToArchiveAsync(draft.Id, _options.DraftsFolder, cancellationToken);
     }
 
     private async Task RefineAndSendAsync(string currentTweet, string feedback, CancellationToken cancellationToken)

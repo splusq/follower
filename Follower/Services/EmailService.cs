@@ -70,12 +70,28 @@ public class EmailService : IEmailService
         _logger.LogInformation("Sent email to {To} with subject: {Subject}", to, subject);
     }
 
-    public async Task MoveToArchiveAsync(string messageId, CancellationToken cancellationToken = default)
+    public async Task MoveToArchiveAsync(string messageId, string? sourceFolder = null, CancellationToken cancellationToken = default)
     {
         await ExecuteImapAsync(async client =>
         {
-            var inbox = client.Inbox;
-            await inbox.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
+            // Get source folder (inbox if not specified)
+            IMailFolder folder;
+            if (string.IsNullOrEmpty(sourceFolder))
+            {
+                folder = client.Inbox;
+            }
+            else
+            {
+                var found = await GetFolderAsync(client, sourceFolder, cancellationToken);
+                if (found == null)
+                {
+                    _logger.LogWarning("Source folder not found: {Folder}", sourceFolder);
+                    return;
+                }
+                folder = found;
+            }
+
+            await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
 
             // Find message by UID
             if (!UniqueId.TryParse(messageId, out var uid))
@@ -88,8 +104,8 @@ public class EmailService : IEmailService
             var archiveFolder = await GetOrCreateFolderAsync(client, _options.ArchiveFolder, cancellationToken);
 
             // Move message
-            await inbox.MoveToAsync(uid, archiveFolder, cancellationToken);
-            _logger.LogInformation("Moved message {MessageId} to archive", messageId);
+            await folder.MoveToAsync(uid, archiveFolder, cancellationToken);
+            _logger.LogInformation("Moved message {MessageId} from {Source} to archive", messageId, sourceFolder ?? "Inbox");
         }, cancellationToken);
     }
 
@@ -126,11 +142,14 @@ public class EmailService : IEmailService
 
             await folder.OpenAsync(FolderAccess.ReadOnly, cancellationToken);
 
+            // Get all message UIDs
+            var uids = await folder.SearchAsync(SearchQuery.All, cancellationToken);
             var messages = new List<EmailMessage>();
-            for (int i = 0; i < folder.Count; i++)
+
+            foreach (var uid in uids)
             {
-                var message = await folder.GetMessageAsync(i, cancellationToken);
-                messages.Add(ToEmailMessage(i.ToString(), message));
+                var message = await folder.GetMessageAsync(uid, cancellationToken);
+                messages.Add(ToEmailMessage(uid.ToString(), message));
             }
 
             _logger.LogInformation("Found {Count} messages in {Folder}", messages.Count, folderName);

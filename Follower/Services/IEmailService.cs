@@ -8,6 +8,6 @@ public interface IEmailService
     Task<IReadOnlyList<EmailMessage>> GetDraftsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EmailMessage>> GetInfluencerTweetsAsync(CancellationToken cancellationToken = default);
     Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default);
-    Task MoveToArchiveAsync(string messageId, CancellationToken cancellationToken = default);
+    Task MoveToArchiveAsync(string messageId, string? sourceFolder = null, CancellationToken cancellationToken = default);
     Task<int> CountArchivedByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 }

@@ -22,7 +22,7 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<EmailMessage>> GetUnreadRepliesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<EmailMessage>> GetUnreadAsync(CancellationToken cancellationToken = default)
     {
         return await ExecuteImapAsync(async client =>
         {
@@ -35,30 +35,29 @@ public class EmailService : IEmailService
             foreach (var uid in uids)
             {
                 var message = await inbox.GetMessageAsync(uid, cancellationToken);
-                messages.Add(ToEmailMessage(uid.ToString(), message));
+                messages.Add(ToEmailMessage(uid, message));
             }
 
-            _logger.LogInformation("Found {Count} unread replies", messages.Count);
+            _logger.LogInformation("Found {Count} unread emails", messages.Count);
             return messages;
         }, cancellationToken);
     }
 
-    public async Task<IReadOnlyList<EmailMessage>> GetDraftsAsync(CancellationToken cancellationToken = default)
-    {
-        return await GetMessagesFromFolderAsync(_options.DraftsFolder, cancellationToken);
-    }
-
-    public async Task<IReadOnlyList<EmailMessage>> GetInfluencerTweetsAsync(CancellationToken cancellationToken = default)
-    {
-        return await GetMessagesFromFolderAsync(_options.InfluencersFolder, cancellationToken);
-    }
-
-    public async Task SendAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
+    public async Task ReplyAsync(EmailMessage original, string body, CancellationToken cancellationToken = default)
     {
         var message = new MimeMessage();
         message.From.Add(new MailboxAddress("", _options.EmailUsername));
-        message.To.Add(new MailboxAddress("", to));
-        message.Subject = subject;
+        message.To.Add(new MailboxAddress("", original.From)); // Reply to original sender
+
+        // Threading headers
+        message.InReplyTo = original.MessageId;
+        message.References.Add(original.MessageId);
+
+        // Keep Re: prefix for threading
+        message.Subject = original.Subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase)
+            ? original.Subject
+            : $"Re: {original.Subject}";
+
         message.Body = new TextPart("plain") { Text = body };
 
         using var client = new SmtpClient();
@@ -67,107 +66,50 @@ public class EmailService : IEmailService
         await client.SendAsync(message, cancellationToken);
         await client.DisconnectAsync(true, cancellationToken);
 
-        _logger.LogInformation("Sent email to {To} with subject: {Subject}", to, subject);
+        _logger.LogInformation("Sent reply to {To} for thread: {Subject}", original.From, message.Subject);
     }
 
-    public async Task MoveToArchiveAsync(string messageId, string? sourceFolder = null, CancellationToken cancellationToken = default)
+    public async Task MarkAsReadAsync(string uid, CancellationToken cancellationToken = default)
     {
         await ExecuteImapAsync(async client =>
         {
-            // Get source folder (inbox if not specified)
-            IMailFolder folder;
-            if (string.IsNullOrEmpty(sourceFolder))
-            {
-                folder = client.Inbox;
-            }
-            else
-            {
-                var found = await GetFolderAsync(client, sourceFolder, cancellationToken);
-                if (found == null)
-                {
-                    _logger.LogWarning("Source folder not found: {Folder}", sourceFolder);
-                    return;
-                }
-                folder = found;
-            }
+            var inbox = client.Inbox;
+            await inbox.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
 
-            await folder.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
-
-            // Find message by UID
-            if (!UniqueId.TryParse(messageId, out var uid))
+            if (!UniqueId.TryParse(uid, out var uniqueId))
             {
-                _logger.LogWarning("Invalid message ID: {MessageId}", messageId);
+                _logger.LogWarning("Invalid UID: {Uid}", uid);
                 return;
             }
 
-            // Get or create archive folder
+            await inbox.AddFlagsAsync(uniqueId, MessageFlags.Seen, true, cancellationToken);
+            _logger.LogDebug("Marked message {Uid} as read", uid);
+        }, cancellationToken);
+    }
+
+    public async Task ArchiveAsync(string uid, CancellationToken cancellationToken = default)
+    {
+        await ExecuteImapAsync(async client =>
+        {
+            var inbox = client.Inbox;
+            await inbox.OpenAsync(FolderAccess.ReadWrite, cancellationToken);
+
+            if (!UniqueId.TryParse(uid, out var uniqueId))
+            {
+                _logger.LogWarning("Invalid UID: {Uid}", uid);
+                return;
+            }
+
             var archiveFolder = await GetOrCreateFolderAsync(client, _options.ArchiveFolder, cancellationToken);
+            await inbox.MoveToAsync(uniqueId, archiveFolder, cancellationToken);
 
-            // Move message
-            await folder.MoveToAsync(uid, archiveFolder, cancellationToken);
-            _logger.LogInformation("Moved message {MessageId} from {Source} to archive", messageId, sourceFolder ?? "Inbox");
-        }, cancellationToken);
-    }
-
-    public async Task<int> CountArchivedByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
-    {
-        return await ExecuteImapAsync(async client =>
-        {
-            var archiveFolder = await GetFolderAsync(client, _options.ArchiveFolder, cancellationToken);
-            if (archiveFolder == null)
-            {
-                return 0;
-            }
-
-            await archiveFolder.OpenAsync(FolderAccess.ReadOnly, cancellationToken);
-
-            var query = SearchQuery.SubjectContains(prefix);
-            var uids = await archiveFolder.SearchAsync(query, cancellationToken);
-
-            _logger.LogDebug("Found {Count} archived messages with prefix: {Prefix}", uids.Count, prefix);
-            return uids.Count;
-        }, cancellationToken);
-    }
-
-    private async Task<IReadOnlyList<EmailMessage>> GetMessagesFromFolderAsync(string folderName, CancellationToken cancellationToken)
-    {
-        return await ExecuteImapAsync<IReadOnlyList<EmailMessage>>(async client =>
-        {
-            var folder = await GetFolderAsync(client, folderName, cancellationToken);
-            if (folder == null)
-            {
-                _logger.LogWarning("Folder not found: {FolderName}", folderName);
-                return Array.Empty<EmailMessage>();
-            }
-
-            await folder.OpenAsync(FolderAccess.ReadOnly, cancellationToken);
-
-            // Get all message UIDs
-            var uids = await folder.SearchAsync(SearchQuery.All, cancellationToken);
-            var messages = new List<EmailMessage>();
-
-            foreach (var uid in uids)
-            {
-                var message = await folder.GetMessageAsync(uid, cancellationToken);
-                messages.Add(ToEmailMessage(uid.ToString(), message));
-            }
-
-            _logger.LogInformation("Found {Count} messages in {Folder}", messages.Count, folderName);
-            return messages;
+            _logger.LogInformation("Archived message {Uid}", uid);
         }, cancellationToken);
     }
 
     private async Task<IMailFolder?> GetFolderAsync(ImapClient client, string folderName, CancellationToken cancellationToken)
     {
-        // Check for special folders first (Drafts, Sent, etc.)
-        if (folderName.Equals("Drafts", StringComparison.OrdinalIgnoreCase) && client.GetFolder(SpecialFolder.Drafts) is { } drafts)
-        {
-            return drafts;
-        }
-        if (folderName.Equals("Sent", StringComparison.OrdinalIgnoreCase) && client.GetFolder(SpecialFolder.Sent) is { } sent)
-        {
-            return sent;
-        }
+        // Check for special folders first
         if (folderName.Equals("Archive", StringComparison.OrdinalIgnoreCase) && client.GetFolder(SpecialFolder.Archive) is { } archive)
         {
             return archive;
@@ -217,7 +159,7 @@ public class EmailService : IEmailService
         return result;
     }
 
-    private static EmailMessage ToEmailMessage(string id, MimeMessage message)
+    private static EmailMessage ToEmailMessage(UniqueId uid, MimeMessage message)
     {
         var body = message.TextBody;
         if (string.IsNullOrEmpty(body) && message.HtmlBody != null)
@@ -225,8 +167,14 @@ public class EmailService : IEmailService
             body = HtmlConverter.ToMarkdown(message.HtmlBody);
         }
 
+        // Extract sender email address
+        var from = message.From.Mailboxes.FirstOrDefault()?.Address ?? "";
+
         return new EmailMessage(
-            id,
+            uid.ToString(),
+            message.MessageId ?? "",
+            message.InReplyTo,
+            from,
             message.Subject ?? "",
             body ?? "",
             message.Date

@@ -1,6 +1,5 @@
 using DotNetEnv;
 using Follower.Configuration;
-using Follower.Models;
 using Follower.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -51,43 +50,36 @@ public class LlmServiceIntegrationTests
     }
 
     [SkippableFact]
-    public async Task AnalyzeStyleAsync_WithRealApi_ReturnsStyleProfile()
-    {
-        SkipIfNoCredentials();
-
-        // Arrange - each influencer has multiple tweets in the body
-        var influencers = new[]
-        {
-            new InfluencerExample("Paul Graham", """
-                Hot take: the best code is the code you don't write. Delete more, ship less, sleep better.
-                Everyone's building AI wrappers. Few are building AI infrastructure. Be the infrastructure.
-                Your startup doesn't need Kubernetes. It needs customers.
-                """),
-            new InfluencerExample("DHH", """
-                Majestic monoliths beat microservice madness.
-                Rails is boring. Boring is good. Ship features, not infrastructure.
-                """)
-        };
-
-        // Act
-        var result = await _sut!.AnalyzeStyleAsync(influencers);
-
-        // Assert
-        result.Should().NotBeNullOrEmpty();
-        result.Length.Should().BeGreaterThan(100); // Should be a meaningful analysis
-    }
-
-    [SkippableFact]
-    public async Task GenerateTweetAsync_WithRealApi_ReturnsTweetUnder280Chars()
+    public async Task GenerateTweetAsync_WithTopicOnly_ReturnsTweetUnder280Chars()
     {
         SkipIfNoCredentials();
 
         // Arrange
-        var notes = "Microservices add complexity. Most startups should start with a monolith.";
-        var styleProfile = "Tone: provocative, confident. Short punchy sentences. No emoji. Challenge conventional wisdom.";
+        var topic = "Microservices add complexity. Most startups should start with a monolith.";
 
         // Act
-        var result = await _sut!.GenerateTweetAsync(notes, styleProfile);
+        var result = await _sut!.GenerateTweetAsync(topic);
+
+        // Assert
+        result.Should().NotBeNullOrEmpty();
+        result.Length.Should().BeLessOrEqualTo(280);
+    }
+
+    [SkippableFact]
+    public async Task GenerateTweetAsync_WithTopicAndContent_ReturnsTweetUnder280Chars()
+    {
+        SkipIfNoCredentials();
+
+        // Arrange
+        var topic = "Interesting take on startup architecture";
+        var content = """
+            Most successful startups began with simple monolithic architectures.
+            Facebook, Twitter, and Shopify all started as monoliths.
+            The complexity of microservices often outweighs the benefits for early-stage companies.
+            """;
+
+        // Act
+        var result = await _sut!.GenerateTweetAsync(topic, content);
 
         // Assert
         result.Should().NotBeNullOrEmpty();
@@ -102,10 +94,9 @@ public class LlmServiceIntegrationTests
         // Arrange
         var currentTweet = "Microservices are overrated for most startups.";
         var feedback = "Make it more provocative and add a contrarian angle";
-        var styleProfile = "Tone: provocative, confident. Short punchy sentences.";
 
         // Act
-        var result = await _sut!.RefineTweetAsync(feedback, currentTweet, styleProfile);
+        var result = await _sut!.RefineTweetAsync(currentTweet, feedback);
 
         // Assert
         result.Should().NotBeNullOrEmpty();

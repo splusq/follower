@@ -1,3 +1,6 @@
 namespace Follower.Models;
 
-public record TweetDraft(string Text, string SourceDraftId, int Sequence);
+/// <summary>
+/// A generated tweet ready for review.
+/// </summary>
+public record TweetDraft(string Text);

@@ -1,4 +1,5 @@
 using Follower.Configuration;
+using Follower.Models;
 using Follower.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -9,7 +10,6 @@ namespace Follower;
 public class Worker : BackgroundService
 {
     private readonly IEmailService _emailService;
-    private readonly IStyleService _styleService;
     private readonly ITweetService _tweetService;
     private readonly IXTwitterService _xTwitterService;
     private readonly AgentOptions _options;
@@ -17,14 +17,12 @@ public class Worker : BackgroundService
 
     public Worker(
         IEmailService emailService,
-        IStyleService styleService,
         ITweetService tweetService,
         IXTwitterService xTwitterService,
         IOptions<AgentOptions> options,
         ILogger<Worker> logger)
     {
         _emailService = emailService;
-        _styleService = styleService;
         _tweetService = tweetService;
         _xTwitterService = xTwitterService;
         _options = options.Value;
@@ -56,26 +54,79 @@ public class Worker : BackgroundService
     {
         _logger.LogInformation("Starting processing cycle");
 
-        // Step 1: Check for unread replies (human feedback)
-        var replies = await _emailService.GetUnreadRepliesAsync(cancellationToken);
-        foreach (var reply in replies)
-        {
-            await ProcessReplyAsync(reply, cancellationToken);
-        }
+        var unreadEmails = await _emailService.GetUnreadAsync(cancellationToken);
 
-        // Step 2: Check if we need to generate new tweets
-        var todayPrefix = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        var tweetsToday = await _emailService.CountArchivedByPrefixAsync(todayPrefix, cancellationToken);
-
-        if (tweetsToday < _options.DailyTweetTarget)
+        foreach (var email in unreadEmails)
         {
-            await GenerateNewTweetAsync(cancellationToken);
+            if (email.IsReply)
+            {
+                // This is a reply to an existing thread - process command
+                await ProcessReplyAsync(email, cancellationToken);
+            }
+            else
+            {
+                // This is a new topic request - generate tweet
+                await ProcessNewTopicAsync(email, cancellationToken);
+            }
         }
 
         _logger.LogInformation("Processing cycle complete");
     }
 
-    private async Task ProcessReplyAsync(Models.EmailMessage reply, CancellationToken cancellationToken)
+    private async Task ProcessNewTopicAsync(EmailMessage email, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Processing new topic: {Subject}", email.Subject);
+
+        // Parse topic and optional content separated by ---
+        var (topic, content) = ParseTopicAndContent(email.Subject, email.Body);
+
+        var tweet = await _tweetService.GenerateAsync(topic, content, cancellationToken);
+
+        // Reply with the generated tweet
+        var replyBody = FormatTweetForReview(tweet.Text);
+        await _emailService.ReplyAsync(email, replyBody, cancellationToken);
+
+        // Mark as read (but don't archive - thread is still active)
+        await _emailService.MarkAsReadAsync(email.Uid, cancellationToken);
+    }
+
+    /// <summary>
+    /// Parses email into topic and optional content.
+    /// Format: Subject is the main topic. Body can have additional context,
+    /// and if it contains ---, everything after is treated as source content.
+    /// </summary>
+    private static (string topic, string? content) ParseTopicAndContent(string subject, string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return (subject, null);
+        }
+
+        // Check for --- separator
+        var separatorIndex = body.IndexOf("\n---\n", StringComparison.Ordinal);
+        if (separatorIndex == -1)
+        {
+            separatorIndex = body.IndexOf("\r\n---\r\n", StringComparison.Ordinal);
+        }
+
+        if (separatorIndex >= 0)
+        {
+            // Split into topic context and content
+            var topicContext = body[..separatorIndex].Trim();
+            var content = body[(separatorIndex + 5)..].Trim(); // Skip past \n---\n
+
+            var topic = string.IsNullOrWhiteSpace(topicContext)
+                ? subject
+                : $"{subject}\n\n{topicContext}";
+
+            return (topic, string.IsNullOrWhiteSpace(content) ? null : content);
+        }
+
+        // No separator - entire body is topic context
+        return ($"{subject}\n\n{body}", null);
+    }
+
+    private async Task ProcessReplyAsync(EmailMessage reply, CancellationToken cancellationToken)
     {
         var body = reply.Body.Trim();
         var command = ParseCommand(body);
@@ -84,75 +135,59 @@ public class Worker : BackgroundService
 
         // Extract the tweet from the quoted portion of the reply
         var quotedTweet = ExtractQuotedTweet(body);
-        if (string.IsNullOrEmpty(quotedTweet))
-        {
-            _logger.LogWarning("Could not extract tweet from reply, skipping");
-            await _emailService.MoveToArchiveAsync(reply.Id, null, cancellationToken);
-            return;
-        }
 
         switch (command)
         {
             case "/post":
-                var posted = await _xTwitterService.PostTweetAsync(quotedTweet, cancellationToken);
-                if (posted)
+                if (string.IsNullOrEmpty(quotedTweet))
                 {
-                    _logger.LogInformation("Tweet posted successfully");
+                    _logger.LogWarning("Could not extract tweet from reply, skipping post");
                 }
                 else
                 {
-                    _logger.LogError("Failed to post tweet");
+                    var posted = await _xTwitterService.PostTweetAsync(quotedTweet, cancellationToken);
+                    if (posted)
+                    {
+                        _logger.LogInformation("Tweet posted successfully");
+                    }
+                    else
+                    {
+                        _logger.LogError("Failed to post tweet");
+                    }
                 }
+                await _emailService.ArchiveAsync(reply.Uid, cancellationToken);
                 break;
 
             case "/reject":
                 _logger.LogInformation("Tweet rejected");
+                await _emailService.ArchiveAsync(reply.Uid, cancellationToken);
                 break;
 
             default:
                 // Treat as refinement feedback
-                var feedback = GetFeedbackText(body);
-                if (!string.IsNullOrWhiteSpace(feedback))
+                if (string.IsNullOrEmpty(quotedTweet))
                 {
-                    await RefineAndSendAsync(quotedTweet, feedback, cancellationToken);
+                    _logger.LogWarning("Could not extract tweet from reply, skipping refinement");
+                    await _emailService.MarkAsReadAsync(reply.Uid, cancellationToken);
+                }
+                else
+                {
+                    var feedback = GetFeedbackText(body);
+                    if (!string.IsNullOrWhiteSpace(feedback))
+                    {
+                        var refined = await _tweetService.RefineAsync(quotedTweet, feedback, cancellationToken);
+                        var replyBody = FormatTweetForReview(refined.Text);
+                        await _emailService.ReplyAsync(reply, replyBody, cancellationToken);
+                    }
+                    await _emailService.MarkAsReadAsync(reply.Uid, cancellationToken);
                 }
                 break;
         }
-
-        await _emailService.MoveToArchiveAsync(reply.Id, null, cancellationToken);
     }
 
-    private async Task GenerateNewTweetAsync(CancellationToken cancellationToken)
+    private static string FormatTweetForReview(string tweetText)
     {
-        var drafts = await _emailService.GetDraftsAsync(cancellationToken);
-        if (drafts.Count == 0)
-        {
-            _logger.LogInformation("No drafts available");
-            return;
-        }
-
-        var draft = drafts[0];
-        _logger.LogInformation("Generating tweet from draft: {Subject}", draft.Subject);
-
-        var style = await _styleService.GetStyleProfileAsync(cancellationToken);
-        var tweetDraft = await _tweetService.GenerateAsync(draft, style, cancellationToken);
-
-        await SendApprovalEmailAsync(tweetDraft.Text, cancellationToken);
-        await _emailService.MoveToArchiveAsync(draft.Id, _options.DraftsFolder, cancellationToken);
-    }
-
-    private async Task RefineAndSendAsync(string currentTweet, string feedback, CancellationToken cancellationToken)
-    {
-        var style = await _styleService.GetStyleProfileAsync(cancellationToken);
-        var refined = await _tweetService.RefineAsync(feedback, new Models.TweetDraft(currentTweet, "", 1), style, cancellationToken);
-
-        await SendApprovalEmailAsync(refined.Text, cancellationToken);
-    }
-
-    private async Task SendApprovalEmailAsync(string tweetText, CancellationToken cancellationToken)
-    {
-        var subject = $"[Tweet] {DateTime.UtcNow:yyyy-MM-dd-HHmmss}";
-        var body = $"""
+        return $"""
             Tweet ready for review:
 
             "{tweetText}"
@@ -162,9 +197,6 @@ public class Worker : BackgroundService
             /reject - discard this tweet
             Or reply with feedback to refine it
             """;
-
-        await _emailService.SendAsync(_options.EmailUsername, subject, body, cancellationToken);
-        _logger.LogInformation("Sent approval email for tweet");
     }
 
     private static string? ParseCommand(string body)

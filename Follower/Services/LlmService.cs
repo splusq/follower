@@ -1,7 +1,6 @@
 using System.ClientModel;
 using Azure.AI.OpenAI;
 using Follower.Configuration;
-using Follower.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI;
@@ -39,55 +38,46 @@ public class LlmService : ILlmService
         }
     }
 
-    public async Task<string> AnalyzeStyleAsync(IEnumerable<InfluencerExample> influencers, CancellationToken cancellationToken = default)
+    public async Task<string> GenerateTweetAsync(string topic, string? content = null, CancellationToken cancellationToken = default)
     {
-        var influencerList = influencers.ToList();
-        _logger.LogInformation("Analyzing style from {Count} influencers", influencerList.Count);
+        _logger.LogInformation("Generating tweet for topic: {Topic}, has content: {HasContent}",
+            topic, !string.IsNullOrWhiteSpace(content));
 
-        var influencersText = string.Join("\n\n---\n\n", influencerList.Select(i => $"## {i.Name}\n{i.Tweets}"));
+        var contentSection = string.IsNullOrWhiteSpace(content)
+            ? ""
+            : $"""
 
-        var prompt = $"""
-            Analyze tweets from the following influencers and create a unified style guide that blends their voices.
+            Source material:
+            ---
+            {content}
+            ---
 
-            Each influencer section contains multiple example tweets (one per line).
-
-            {influencersText}
-
-            Create a style guide that captures the best elements from these influencers. Focus on:
-            - Tone (casual, professional, witty, provocative, etc.)
-            - Sentence structure and length preferences
-            - Use of punctuation, capitalization, emoji
-            - Common patterns or phrases
-            - How they open and close tweets
-            - Their approach to technical vs accessible language
-
-            Provide a concise, actionable style guide for writing new tweets that blend these voices naturally.
             """;
 
-        var response = await _chatClient.CompleteChatAsync(
-            [new UserChatMessage(prompt)],
-            cancellationToken: cancellationToken
-        );
-
-        var result = response.Value.Content[0].Text;
-        _logger.LogDebug("Generated style profile: {Length} chars", result.Length);
-        return result;
-    }
-
-    public async Task<string> GenerateTweetAsync(string notes, string styleProfile, CancellationToken cancellationToken = default)
-    {
-        _logger.LogInformation("Generating tweet from notes ({Length} chars)", notes.Length);
-
         var prompt = $"""
-            Write a single tweet based on the following notes. The tweet must be under 280 characters.
+            You are a viral Twitter ghostwriter. Your tweets get massive engagement and build loyal followers.
 
-            Style guide to follow:
-            {styleProfile}
+            Topic: {topic}
+            {contentSection}
+            RULES FOR VIRAL TWEETS:
+            1. First 5 words MUST stop the scroll - be bold, surprising, or contrarian
+            2. One big idea only. No fluff.
+            3. Write like you're texting a smart friend - casual but sharp
+            4. Challenge conventional wisdom. "Everyone thinks X. They're wrong."
+            5. Use pattern interrupts: short sentence. Then elaborate.
+            6. End with something quotable, memorable, or that sparks debate
+            7. Sound like a human with opinions, not a brand
 
-            Notes/content to tweet about:
-            {notes}
+            AVOID:
+            - Hashtags, emojis, "thread" or "1/"
+            - Starting with "I think" or "In my opinion"
+            - Generic advice anyone could give
+            - Being preachy or self-righteous
+            - Hedge words (maybe, perhaps, might)
 
-            Write only the tweet text, nothing else. No quotes, no explanation.
+            LENGTH: Under 280 characters. Shorter is better. Punchy wins.
+
+            Write only the tweet. No quotes, no explanation.
             """;
 
         var response = await _chatClient.CompleteChatAsync(
@@ -100,12 +90,12 @@ public class LlmService : ILlmService
         return result;
     }
 
-    public async Task<string> RefineTweetAsync(string feedback, string currentTweet, string styleProfile, CancellationToken cancellationToken = default)
+    public async Task<string> RefineTweetAsync(string currentTweet, string feedback, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Refining tweet based on feedback");
 
         var prompt = $"""
-            Refine this tweet based on the feedback. Keep it under 280 characters.
+            Refine this tweet based on the feedback. Make it MORE viral, not less.
 
             Current tweet:
             {currentTweet}
@@ -113,10 +103,15 @@ public class LlmService : ILlmService
             Feedback:
             {feedback}
 
-            Style guide to follow:
-            {styleProfile}
+            REMEMBER:
+            - First 5 words must stop the scroll
+            - Be bolder, not safer
+            - One punchy idea, no fluff
+            - Sound human with real opinions
+            - No hashtags, no emojis
+            - Under 280 chars. Shorter = better.
 
-            Write only the refined tweet text, nothing else. No quotes, no explanation.
+            Write only the refined tweet. No quotes, no explanation.
             """;
 
         var response = await _chatClient.CompleteChatAsync(

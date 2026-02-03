@@ -14,21 +14,22 @@ public class TweetService : ITweetService
         _logger = logger;
     }
 
-    public async Task<TweetDraft> GenerateAsync(EmailMessage draft, StyleProfile style, CancellationToken cancellationToken = default)
+    public async Task<TweetDraft> GenerateAsync(string topic, string? content = null, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Generating tweet from draft: {Subject}", draft.Subject);
+        _logger.LogInformation("Generating tweet for topic: {Topic}, has content: {HasContent}",
+            topic, !string.IsNullOrWhiteSpace(content));
 
-        var tweetText = await _llmService.GenerateTweetAsync(draft.Body, style.ProfileText, cancellationToken);
+        var tweetText = await _llmService.GenerateTweetAsync(topic, content, cancellationToken);
 
-        return new TweetDraft(tweetText, draft.Id, 1);
+        return new TweetDraft(tweetText);
     }
 
-    public async Task<TweetDraft> RefineAsync(string feedback, TweetDraft currentDraft, StyleProfile style, CancellationToken cancellationToken = default)
+    public async Task<TweetDraft> RefineAsync(string currentTweet, string feedback, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Refining tweet based on feedback for draft: {DraftId}", currentDraft.SourceDraftId);
+        _logger.LogInformation("Refining tweet based on feedback");
 
-        var refinedText = await _llmService.RefineTweetAsync(feedback, currentDraft.Text, style.ProfileText, cancellationToken);
+        var refinedText = await _llmService.RefineTweetAsync(currentTweet, feedback, cancellationToken);
 
-        return new TweetDraft(refinedText, currentDraft.SourceDraftId, currentDraft.Sequence);
+        return new TweetDraft(refinedText);
     }
 }

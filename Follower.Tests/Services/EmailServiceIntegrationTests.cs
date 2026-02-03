@@ -53,12 +53,12 @@ public class EmailServiceIntegrationTests
     }
 
     [SkippableFact]
-    public async Task GetUnreadRepliesAsync_ConnectsToImapAndReturnsMessages()
+    public async Task GetUnreadAsync_ConnectsToImapAndReturnsMessages()
     {
         SkipIfNoCredentials();
 
         // Act
-        var result = await _sut!.GetUnreadRepliesAsync();
+        var result = await _sut!.GetUnreadAsync();
 
         // Assert
         result.Should().NotBeNull();
@@ -66,38 +66,20 @@ public class EmailServiceIntegrationTests
     }
 
     [SkippableFact]
-    public async Task GetDraftsAsync_ConnectsToImapAndReturnsDrafts()
+    public async Task GetUnreadAsync_ReturnsEmailsWithThreadingInfo()
     {
         SkipIfNoCredentials();
 
         // Act
-        var result = await _sut!.GetDraftsAsync();
+        var result = await _sut!.GetUnreadAsync();
 
         // Assert
         result.Should().NotBeNull();
-    }
-
-    [SkippableFact]
-    public async Task GetInfluencerTweetsAsync_ConnectsToImapAndReturnsMessages()
-    {
-        SkipIfNoCredentials();
-
-        // Act
-        var result = await _sut!.GetInfluencerTweetsAsync();
-
-        // Assert
-        result.Should().NotBeNull();
-    }
-
-    [SkippableFact]
-    public async Task CountArchivedByPrefixAsync_ConnectsAndReturnsCount()
-    {
-        SkipIfNoCredentials();
-
-        // Act
-        var result = await _sut!.CountArchivedByPrefixAsync("TWEET-");
-
-        // Assert
-        result.Should().BeGreaterOrEqualTo(0);
+        foreach (var email in result)
+        {
+            email.Uid.Should().NotBeNullOrEmpty();
+            email.MessageId.Should().NotBeNull(); // May be empty but not null
+            // InReplyTo can be null for non-replies
+        }
     }
 }

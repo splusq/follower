@@ -27,7 +27,6 @@ builder.ConfigureServices((context, services) =>
     // Register services
     services.AddSingleton<ILlmService, LlmService>();
     services.AddSingleton<IEmailService, EmailService>();
-    services.AddSingleton<IStyleService, StyleService>();
     services.AddSingleton<ITweetService, TweetService>();
     services.AddHttpClient<IXTwitterService, XTwitterService>();
 

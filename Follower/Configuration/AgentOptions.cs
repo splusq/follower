@@ -30,6 +30,9 @@ public class AgentOptions
     public string AzureOpenAIKey { get; set; } = "";
     public string AzureOpenAIDeployment { get; set; } = "gpt-4o";
 
+    // Web Search (built into Azure OpenAI Responses API)
+    public bool EnableWebSearch { get; set; } = true;
+
     // Ollama (local)
     public string OllamaEndpoint { get; set; } = "http://localhost:11434/v1";
     public string OllamaModel { get; set; } = "llama3.2";

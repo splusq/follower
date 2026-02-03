@@ -77,10 +77,10 @@ public class Worker : BackgroundService
     {
         _logger.LogInformation("Processing new topic: {Subject}", email.Subject);
 
-        // Parse topic and optional content separated by ---
-        var (topic, content) = ParseTopicAndContent(email.Subject, email.Body);
+        // Parse topic, optional content, and web search flag
+        var (topic, content, enableWebSearch) = ParseTopicAndContent(email.Subject, email.Body);
 
-        var tweet = await _tweetService.GenerateAsync(topic, content, cancellationToken);
+        var tweet = await _tweetService.GenerateAsync(topic, content, enableWebSearch, cancellationToken);
 
         // Reply with the generated tweet
         var replyBody = FormatTweetForReview(tweet.Text);
@@ -91,39 +91,51 @@ public class Worker : BackgroundService
     }
 
     /// <summary>
-    /// Parses email into topic and optional content.
-    /// Format: Subject is the main topic. Body can have additional context,
-    /// and if it contains ---, everything after is treated as source content.
+    /// Parses email into topic, optional content, and web search flag.
+    /// Format:
+    ///   - Subject is the main topic
+    ///   - /search in body enables web search
+    ///   - --- separates topic context from source content
     /// </summary>
-    private static (string topic, string? content) ParseTopicAndContent(string subject, string body)
+    private static (string topic, string? content, bool enableWebSearch) ParseTopicAndContent(string subject, string body)
     {
         if (string.IsNullOrWhiteSpace(body))
         {
-            return (subject, null);
+            return (subject, null, false);
         }
 
+        // Check for /search command
+        var enableWebSearch = body.Contains("/search", StringComparison.OrdinalIgnoreCase);
+        var cleanBody = body
+            .Replace("/search", "", StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
         // Check for --- separator
-        var separatorIndex = body.IndexOf("\n---\n", StringComparison.Ordinal);
+        var separatorIndex = cleanBody.IndexOf("\n---\n", StringComparison.Ordinal);
         if (separatorIndex == -1)
         {
-            separatorIndex = body.IndexOf("\r\n---\r\n", StringComparison.Ordinal);
+            separatorIndex = cleanBody.IndexOf("\r\n---\r\n", StringComparison.Ordinal);
         }
 
         if (separatorIndex >= 0)
         {
             // Split into topic context and content
-            var topicContext = body[..separatorIndex].Trim();
-            var content = body[(separatorIndex + 5)..].Trim(); // Skip past \n---\n
+            var topicContext = cleanBody[..separatorIndex].Trim();
+            var content = cleanBody[(separatorIndex + 5)..].Trim();
 
             var topic = string.IsNullOrWhiteSpace(topicContext)
                 ? subject
                 : $"{subject}\n\n{topicContext}";
 
-            return (topic, string.IsNullOrWhiteSpace(content) ? null : content);
+            return (topic, string.IsNullOrWhiteSpace(content) ? null : content, enableWebSearch);
         }
 
         // No separator - entire body is topic context
-        return ($"{subject}\n\n{body}", null);
+        var finalTopic = string.IsNullOrWhiteSpace(cleanBody)
+            ? subject
+            : $"{subject}\n\n{cleanBody}";
+
+        return (finalTopic, null, enableWebSearch);
     }
 
     private async Task ProcessReplyAsync(EmailMessage reply, CancellationToken cancellationToken)

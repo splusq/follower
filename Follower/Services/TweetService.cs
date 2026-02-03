@@ -14,12 +14,12 @@ public class TweetService : ITweetService
         _logger = logger;
     }
 
-    public async Task<TweetDraft> GenerateAsync(string topic, string? content = null, CancellationToken cancellationToken = default)
+    public async Task<TweetDraft> GenerateAsync(string topic, string? content = null, bool enableWebSearch = false, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Generating tweet for topic: {Topic}, has content: {HasContent}",
-            topic, !string.IsNullOrWhiteSpace(content));
+        _logger.LogInformation("Generating tweet for topic: {Topic}, has content: {HasContent}, webSearch: {WebSearch}",
+            topic, !string.IsNullOrWhiteSpace(content), enableWebSearch);
 
-        var tweetText = await _llmService.GenerateTweetAsync(topic, content, cancellationToken);
+        var tweetText = await _llmService.GenerateTweetAsync(topic, content, enableWebSearch, cancellationToken);
 
         return new TweetDraft(tweetText);
     }

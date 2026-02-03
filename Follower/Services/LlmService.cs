@@ -1,4 +1,7 @@
 using System.ClientModel;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Azure.AI.OpenAI;
 using Follower.Configuration;
 using Microsoft.Extensions.Logging;
@@ -10,38 +13,43 @@ namespace Follower.Services;
 
 public class LlmService : ILlmService
 {
-    private readonly ChatClient _chatClient;
+    private readonly ChatClient? _chatClient;
+    private readonly HttpClient _httpClient;
+    private readonly AgentOptions _options;
     private readonly ILogger<LlmService> _logger;
 
-    public LlmService(IOptions<AgentOptions> options, ILogger<LlmService> logger)
+    public LlmService(IOptions<AgentOptions> options, IHttpClientFactory httpClientFactory, ILogger<LlmService> logger)
     {
-        var opts = options.Value;
+        _options = options.Value;
+        _httpClient = httpClientFactory.CreateClient();
         _logger = logger;
 
-        if (opts.LlmProvider.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
+        if (_options.LlmProvider.Equals("Ollama", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("Using Ollama provider at {Endpoint} with model {Model}",
-                opts.OllamaEndpoint, opts.OllamaModel);
+                _options.OllamaEndpoint, _options.OllamaModel);
 
             var client = new OpenAIClient(
                 new ApiKeyCredential("ollama"),
-                new OpenAIClientOptions { Endpoint = new Uri(opts.OllamaEndpoint) });
-            _chatClient = client.GetChatClient(opts.OllamaModel);
+                new OpenAIClientOptions { Endpoint = new Uri(_options.OllamaEndpoint) });
+            _chatClient = client.GetChatClient(_options.OllamaModel);
         }
         else
         {
-            _logger.LogInformation("Using Azure OpenAI provider");
+            _logger.LogInformation("Using Azure OpenAI Responses API with WebSearch: {WebSearch}",
+                _options.EnableWebSearch);
 
-            var credential = new ApiKeyCredential(opts.AzureOpenAIKey);
-            var client = new AzureOpenAIClient(new Uri(opts.AzureOpenAIEndpoint), credential);
-            _chatClient = client.GetChatClient(opts.AzureOpenAIDeployment);
+            // For Azure OpenAI Responses API, we'll use HttpClient directly
+            _chatClient = null;
         }
     }
 
-    public async Task<string> GenerateTweetAsync(string topic, string? content = null, CancellationToken cancellationToken = default)
+    public async Task<string> GenerateTweetAsync(string topic, string? content = null, bool enableWebSearch = false, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Generating tweet for topic: {Topic}, has content: {HasContent}",
-            topic, !string.IsNullOrWhiteSpace(content));
+        // Use web search if explicitly requested OR if enabled globally in config
+        var useWebSearch = enableWebSearch || _options.EnableWebSearch;
+        _logger.LogInformation("Generating tweet for topic: {Topic}, has content: {HasContent}, webSearch: {WebSearch}",
+            topic, !string.IsNullOrWhiteSpace(content), useWebSearch);
 
         var contentSection = string.IsNullOrWhiteSpace(content)
             ? ""
@@ -54,40 +62,119 @@ public class LlmService : ILlmService
 
             """;
 
+        var webSearchInstruction = useWebSearch
+            ? "Search the web for recent, relevant information about this topic to make the tweet timely and informed."
+            : "";
+
         var prompt = $"""
-            You are a viral Twitter ghostwriter. Your tweets get massive engagement and build loyal followers.
+            You are a viral Twitter ghostwriter.
 
             Topic: {topic}
             {contentSection}
-            RULES FOR VIRAL TWEETS:
-            1. First 5 words MUST stop the scroll - be bold, surprising, or contrarian
-            2. One big idea only. No fluff.
-            3. Write like you're texting a smart friend - casual but sharp
-            4. Challenge conventional wisdom. "Everyone thinks X. They're wrong."
-            5. Use pattern interrupts: short sentence. Then elaborate.
-            6. End with something quotable, memorable, or that sparks debate
-            7. Sound like a human with opinions, not a brand
+            {webSearchInstruction}
 
-            AVOID:
-            - Hashtags, emojis, "thread" or "1/"
-            - Starting with "I think" or "In my opinion"
-            - Generic advice anyone could give
-            - Being preachy or self-righteous
-            - Hedge words (maybe, perhaps, might)
+            CRITICAL: Tweet MUST be under 250 characters. Count carefully. This is non-negotiable.
 
-            LENGTH: Under 280 characters. Shorter is better. Punchy wins.
+            RULES:
+            - First 5 words stop the scroll - bold, surprising, contrarian
+            - One idea. No fluff. Short sentences.
+            - Sound human, not like a brand
+            - No hashtags, no emojis, no "thread"
+            - No "I think" or hedge words
 
-            Write only the tweet. No quotes, no explanation.
+            Write ONLY the tweet text. Nothing else.
             """;
 
-        var response = await _chatClient.CompleteChatAsync(
-            [new UserChatMessage(prompt)],
-            cancellationToken: cancellationToken
-        );
+        string result;
+        if (_chatClient != null)
+        {
+            // Use Ollama/standard OpenAI
+            var response = await _chatClient.CompleteChatAsync(
+                [new UserChatMessage(prompt)],
+                cancellationToken: cancellationToken
+            );
+            result = response.Value.Content[0].Text.Trim();
+        }
+        else
+        {
+            // Use Azure OpenAI Responses API with web search
+            result = await CallAzureResponsesApiAsync(prompt, useWebSearch, cancellationToken);
+        }
 
-        var result = response.Value.Content[0].Text.Trim();
+        // Clean up any quotes the LLM might have added
+        result = result.Trim('"', '"', '"', '\'');
+
+        // If still too long, ask for a shorter version
+        if (result.Length > 280)
+        {
+            _logger.LogWarning("Tweet exceeds 280 characters ({Length}), requesting shorter version", result.Length);
+            result = await ShortenTweetAsync(result, cancellationToken);
+        }
+
         _logger.LogInformation("Generated tweet: {Length} chars", result.Length);
         return result;
+    }
+
+    private async Task<string> ShortenTweetAsync(string tweet, CancellationToken cancellationToken)
+    {
+        var prompt = $"""
+            This tweet is too long ({tweet.Length} chars). Shorten to under 250 characters while keeping the punch.
+
+            Original: {tweet}
+
+            Write ONLY the shortened tweet. No quotes, no explanation.
+            """;
+
+        string result;
+        if (_chatClient != null)
+        {
+            var response = await _chatClient.CompleteChatAsync(
+                [new UserChatMessage(prompt)],
+                cancellationToken: cancellationToken
+            );
+            result = response.Value.Content[0].Text.Trim();
+        }
+        else
+        {
+            result = await CallAzureResponsesApiAsync(prompt, enableWebSearch: false, cancellationToken);
+        }
+
+        result = result.Trim('"', '"', '"', '\'');
+
+        // If still too long after retry, truncate at last sentence/space before 280
+        if (result.Length > 280)
+        {
+            _logger.LogWarning("Tweet still too long after shortening ({Length}), truncating", result.Length);
+            result = TruncateTweet(result);
+        }
+
+        return result;
+    }
+
+    private static string TruncateTweet(string tweet)
+    {
+        if (tweet.Length <= 280) return tweet;
+
+        // Try to cut at a sentence boundary
+        var truncated = tweet[..277];
+        var lastPeriod = truncated.LastIndexOf('.');
+        var lastQuestion = truncated.LastIndexOf('?');
+        var lastExclaim = truncated.LastIndexOf('!');
+        var lastSentence = Math.Max(lastPeriod, Math.Max(lastQuestion, lastExclaim));
+
+        if (lastSentence > 200)
+        {
+            return tweet[..(lastSentence + 1)];
+        }
+
+        // Otherwise cut at last space and add ellipsis
+        var lastSpace = truncated.LastIndexOf(' ');
+        if (lastSpace > 200)
+        {
+            return tweet[..lastSpace] + "...";
+        }
+
+        return truncated + "...";
     }
 
     public async Task<string> RefineTweetAsync(string currentTweet, string feedback, CancellationToken cancellationToken = default)
@@ -114,13 +201,128 @@ public class LlmService : ILlmService
             Write only the refined tweet. No quotes, no explanation.
             """;
 
-        var response = await _chatClient.CompleteChatAsync(
-            [new UserChatMessage(prompt)],
-            cancellationToken: cancellationToken
-        );
+        string result;
+        if (_chatClient != null)
+        {
+            var response = await _chatClient.CompleteChatAsync(
+                [new UserChatMessage(prompt)],
+                cancellationToken: cancellationToken
+            );
+            result = response.Value.Content[0].Text.Trim();
+        }
+        else
+        {
+            // No web search needed for refinement
+            result = await CallAzureResponsesApiAsync(prompt, enableWebSearch: false, cancellationToken);
+        }
 
-        var result = response.Value.Content[0].Text.Trim();
         _logger.LogInformation("Refined tweet: {Length} chars", result.Length);
         return result;
+    }
+
+    private async Task<string> CallAzureResponsesApiAsync(string input, bool enableWebSearch, CancellationToken cancellationToken)
+    {
+        // Azure OpenAI Responses API endpoint
+        var endpoint = $"{_options.AzureOpenAIEndpoint.TrimEnd('/')}/openai/v1/responses";
+
+        var request = new ResponsesApiRequest
+        {
+            Model = _options.AzureOpenAIDeployment,
+            Input = input,
+            Tools = enableWebSearch ? [new Tool { Type = "web_search_preview" }] : null
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        httpRequest.Headers.Add("api-key", _options.AzureOpenAIKey);
+        httpRequest.Content = JsonContent.Create(request, options: JsonOptions);
+
+        _logger.LogDebug("Calling Azure OpenAI Responses API: {Endpoint}", endpoint);
+
+        var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Azure OpenAI Responses API error: {Status} - {Error}", response.StatusCode, responseBody);
+            throw new HttpRequestException($"Azure OpenAI API error: {response.StatusCode} - {responseBody}");
+        }
+
+        _logger.LogDebug("Azure OpenAI Responses API raw response: {Response}", responseBody);
+
+        // Parse the response - try multiple possible structures
+        using var doc = JsonDocument.Parse(responseBody);
+        var root = doc.RootElement;
+
+        // Try output_text first (simple format)
+        if (root.TryGetProperty("output_text", out var outputText))
+        {
+            return outputText.GetString()?.Trim() ?? "";
+        }
+
+        // Try output array format
+        if (root.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in output.EnumerateArray())
+            {
+                if (item.TryGetProperty("type", out var type) && type.GetString() == "message")
+                {
+                    if (item.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var contentItem in content.EnumerateArray())
+                        {
+                            if (contentItem.TryGetProperty("type", out var contentType) && contentType.GetString() == "output_text")
+                            {
+                                if (contentItem.TryGetProperty("text", out var text))
+                                {
+                                    return text.GetString()?.Trim() ?? "";
+                                }
+                            }
+                            // Also try just "text" type
+                            if (contentItem.TryGetProperty("type", out var textType) && textType.GetString() == "text")
+                            {
+                                if (contentItem.TryGetProperty("text", out var text))
+                                {
+                                    return text.GetString()?.Trim() ?? "";
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try choices array (chat completions format)
+        if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == JsonValueKind.Array)
+        {
+            var firstChoice = choices.EnumerateArray().FirstOrDefault();
+            if (firstChoice.TryGetProperty("message", out var message))
+            {
+                if (message.TryGetProperty("content", out var messageContent))
+                {
+                    return messageContent.GetString()?.Trim() ?? "";
+                }
+            }
+        }
+
+        _logger.LogWarning("Could not parse response, returning raw: {Response}", responseBody);
+        return "";
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    private class ResponsesApiRequest
+    {
+        public string Model { get; set; } = "";
+        public string Input { get; set; } = "";
+        public List<Tool>? Tools { get; set; }
+    }
+
+    private class Tool
+    {
+        public string Type { get; set; } = "";
     }
 }

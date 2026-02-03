@@ -37,10 +37,13 @@ public class LlmServiceIntegrationTests
             {
                 AzureOpenAIEndpoint = endpoint!,
                 AzureOpenAIKey = key!,
-                AzureOpenAIDeployment = deployment!
+                AzureOpenAIDeployment = deployment!,
+                EnableWebSearch = true
             });
             var logger = new Mock<ILogger<LlmService>>();
-            _sut = new LlmService(options, logger.Object);
+            var httpClientFactory = new Mock<IHttpClientFactory>();
+            httpClientFactory.Setup(x => x.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+            _sut = new LlmService(options, httpClientFactory.Object, logger.Object);
         }
     }
 

@@ -7,7 +7,8 @@ public interface ILlmService
     /// </summary>
     /// <param name="topic">The topic/angle for the tweet</param>
     /// <param name="content">Optional source content (e.g., article text) to base the tweet on</param>
-    Task<string> GenerateTweetAsync(string topic, string? content = null, CancellationToken cancellationToken = default);
+    /// <param name="enableWebSearch">Whether to search the web for recent info</param>
+    Task<string> GenerateTweetAsync(string topic, string? content = null, bool enableWebSearch = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Refines an existing tweet based on user feedback.

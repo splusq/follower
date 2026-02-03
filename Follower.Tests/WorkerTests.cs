@@ -118,7 +118,7 @@ public class WorkerTests
             .ReturnsAsync(new[] { newTopic });
 
         _tweetServiceMock
-            .Setup(x => x.GenerateAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Setup(x => x.GenerateAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TweetDraft("Skip microservices. Ship faster."));
 
         // Act
@@ -137,7 +137,7 @@ public class WorkerTests
 
         // Assert - should generate tweet and reply
         _tweetServiceMock.Verify(
-            x => x.GenerateAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+            x => x.GenerateAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()),
             Times.AtLeastOnce);
         _emailServiceMock.Verify(
             x => x.ReplyAsync(newTopic, It.IsAny<string>(), It.IsAny<CancellationToken>()),

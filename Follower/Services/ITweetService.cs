@@ -9,7 +9,8 @@ public interface ITweetService
     /// </summary>
     /// <param name="topic">The topic to tweet about (from user's email subject/intro)</param>
     /// <param name="content">Optional source content (e.g., paywalled article text)</param>
-    Task<TweetDraft> GenerateAsync(string topic, string? content = null, CancellationToken cancellationToken = default);
+    /// <param name="enableWebSearch">Whether to search the web for recent info</param>
+    Task<TweetDraft> GenerateAsync(string topic, string? content = null, bool enableWebSearch = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Refines an existing tweet based on user feedback.

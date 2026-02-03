@@ -24,6 +24,9 @@ builder.ConfigureServices((context, services) =>
     services.Configure<AgentOptions>(
         context.Configuration.GetSection(AgentOptions.SectionName));
 
+    // Register HttpClient factory
+    services.AddHttpClient();
+
     // Register services
     services.AddSingleton<ILlmService, LlmService>();
     services.AddSingleton<IEmailService, EmailService>();

@@ -27,7 +27,7 @@ public class TweetServiceTests
         var topic = "Microservices are complex for startups";
 
         _llmServiceMock
-            .Setup(x => x.GenerateTweetAsync(topic, null, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GenerateTweetAsync(topic, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync("Hot take: skip the microservices, ship the monolith.");
 
         // Act
@@ -46,14 +46,31 @@ public class TweetServiceTests
         var content = "Article content from paywalled source...";
 
         _llmServiceMock
-            .Setup(x => x.GenerateTweetAsync(topic, content, It.IsAny<CancellationToken>()))
+            .Setup(x => x.GenerateTweetAsync(topic, content, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync("tweet");
 
         // Act
         await _sut.GenerateAsync(topic, content);
 
         // Assert
-        _llmServiceMock.Verify(x => x.GenerateTweetAsync(topic, content, It.IsAny<CancellationToken>()), Times.Once);
+        _llmServiceMock.Verify(x => x.GenerateTweetAsync(topic, content, false, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GenerateAsync_WithWebSearch_PassesFlagToLlm()
+    {
+        // Arrange
+        var topic = "Latest AI news";
+
+        _llmServiceMock
+            .Setup(x => x.GenerateTweetAsync(topic, null, true, It.IsAny<CancellationToken>()))
+            .ReturnsAsync("tweet with web search");
+
+        // Act
+        await _sut.GenerateAsync(topic, null, enableWebSearch: true);
+
+        // Assert
+        _llmServiceMock.Verify(x => x.GenerateTweetAsync(topic, null, true, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -101,14 +118,14 @@ public class TweetServiceTests
         var topic = "test topic";
 
         _llmServiceMock
-            .Setup(x => x.GenerateTweetAsync(It.IsAny<string>(), It.IsAny<string?>(), cts.Token))
+            .Setup(x => x.GenerateTweetAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), cts.Token))
             .ReturnsAsync("tweet");
 
         // Act
-        await _sut.GenerateAsync(topic, null, cts.Token);
+        await _sut.GenerateAsync(topic, null, false, cts.Token);
 
         // Assert
-        _llmServiceMock.Verify(x => x.GenerateTweetAsync(It.IsAny<string>(), It.IsAny<string?>(), cts.Token), Times.Once);
+        _llmServiceMock.Verify(x => x.GenerateTweetAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), cts.Token), Times.Once);
     }
 
     [Fact]

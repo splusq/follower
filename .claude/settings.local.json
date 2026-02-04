@@ -17,7 +17,10 @@
       "Bash(export DOTNET_ROOT=\"/opt/homebrew/opt/dotnet/libexec\")",
       "Bash(export PATH=\"$DOTNET_ROOT:$PATH\")",
       "Bash(dotnet:*)",
-      "Bash(xargs basename:*)"
+      "Bash(xargs basename:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)"
     ]
   }
 }

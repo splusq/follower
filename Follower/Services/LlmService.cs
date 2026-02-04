@@ -73,16 +73,19 @@ public class LlmService : ILlmService
             {contentSection}
             {webSearchInstruction}
 
-            CRITICAL: Tweet MUST be under 250 characters. Count carefully. This is non-negotiable.
+            CRITICAL: Tweet MUST be under 250 characters. This is non-negotiable.
 
             RULES:
             - First 5 words stop the scroll - bold, surprising, contrarian
             - One idea. No fluff. Short sentences.
             - Sound human, not like a brand
-            - No hashtags, no emojis, no "thread"
-            - No "I think" or hedge words
+            - NO hashtags, NO emojis
+            - NO "I think" or hedge words
+            - NO markdown formatting
+            - Single paragraph, no line breaks
+            - URLs are OK if relevant
 
-            Write ONLY the tweet text. Nothing else.
+            Output ONLY the tweet text on a single line. Nothing else.
             """;
 
         string result;
@@ -101,14 +104,14 @@ public class LlmService : ILlmService
             result = await CallAzureResponsesApiAsync(prompt, useWebSearch, cancellationToken);
         }
 
-        // Clean up any quotes the LLM might have added
-        result = result.Trim('"', '"', '"', '\'');
+        // Clean up the tweet
+        result = CleanTweet(result);
 
-        // If still too long, ask for a shorter version
+        // Always enforce the 280 character limit
         if (result.Length > 280)
         {
-            _logger.LogWarning("Tweet exceeds 280 characters ({Length}), requesting shorter version", result.Length);
-            result = await ShortenTweetAsync(result, cancellationToken);
+            _logger.LogWarning("Tweet exceeds 280 characters ({Length}), truncating", result.Length);
+            result = TruncateTweet(result);
         }
 
         _logger.LogInformation("Generated tweet: {Length} chars", result.Length);
@@ -149,6 +152,27 @@ public class LlmService : ILlmService
         }
 
         return result;
+    }
+
+    private static string CleanTweet(string tweet)
+    {
+        // Remove quotes
+        tweet = tweet.Trim('"', '"', '"', '\'', '`');
+
+        // Remove markdown formatting
+        tweet = tweet.Replace("**", "").Replace("__", "").Replace("*", "").Replace("_", "");
+
+        // Remove blockquote markers (various formats)
+        tweet = System.Text.RegularExpressions.Regex.Replace(tweet, @"^>\s*", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+        tweet = tweet.Replace("\n>", "\n").Replace("\r>", "\r");
+
+        // Replace newlines with spaces
+        tweet = tweet.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
+
+        // Collapse multiple spaces
+        tweet = System.Text.RegularExpressions.Regex.Replace(tweet, @"\s+", " ");
+
+        return tweet.Trim();
     }
 
     private static string TruncateTweet(string tweet)
@@ -214,6 +238,14 @@ public class LlmService : ILlmService
         {
             // No web search needed for refinement
             result = await CallAzureResponsesApiAsync(prompt, enableWebSearch: false, cancellationToken);
+        }
+
+        // Clean up and enforce limit
+        result = CleanTweet(result);
+        if (result.Length > 280)
+        {
+            _logger.LogWarning("Refined tweet exceeds 280 characters ({Length}), truncating", result.Length);
+            result = TruncateTweet(result);
         }
 
         _logger.LogInformation("Refined tweet: {Length} chars", result.Length);
@@ -319,6 +351,7 @@ public class LlmService : ILlmService
         public string Model { get; set; } = "";
         public string Input { get; set; } = "";
         public List<Tool>? Tools { get; set; }
+        public int MaxOutputTokens { get; set; } = 1024; // Needs room for web search reasoning + tweet
     }
 
     private class Tool

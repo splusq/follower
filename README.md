@@ -40,8 +40,8 @@ Your mailbox serves as both communication channel and database:
 │  You send   │────▶│   Agent     │────▶│ Agent reply │
 │  topic      │     │  researches │     │ with tweet  │
 │  email      │     │  + generates│     └──────┬──────┘
-└─────────────┘     └─────────────┘            │
-                                               ▼
+└─────────────┘     └─────────────┘           │
+                                              ▼
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │  Post to X  │◀────│   Agent     │◀────│ Your reply  │
 │             │     │  processes  │     │ /post or    │
@@ -71,36 +71,36 @@ Reply to any tweet thread with:
 |-------|--------|-----------|
 | Runtime | .NET 10 | Minimal footprint |
 | Email | MailKit | Single lib for IMAP + SMTP |
-| LLM | Anthropic SDK | Claude for research + generation |
-| Web Search | Anthropic tool_use | Built-in web search for research |
+| LLM | Azure OpenAI / Ollama | GPT-4o for research + generation (Ollama for local) |
+| Web Search | Azure OpenAI | Built-in web search tool for research |
 | X API | Raw HttpClient | OAuth 1.0a, single endpoint |
 | Scheduler | .NET BackgroundService | Built-in, no external deps |
 
-**External dependencies: 2** (MailKit, Anthropic SDK)
+**External dependencies: 3** (MailKit, Azure.AI.OpenAI, HtmlAgilityPack)
 
 ### Services
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Worker Service                        │
-│                    (BackgroundService loop)                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
-│  │ EmailService │  │ TweetService │  │  XService    │       │
-│  ├──────────────┤  ├──────────────┤  ├──────────────┤       │
-│  │ - GetUnread  │  │ - Generate   │  │ - PostTweet  │       │
-│  │ - GetThreads │  │ - Refine     │  │              │       │
-│  │ - Reply      │  │              │  │              │       │
-│  │ - Archive    │  │      ▲       │  │              │       │
-│  └──────────────┘  └──────┼───────┘  └──────────────┘       │
-│                           │                                  │
-│                    ┌──────┴───────┐                         │
-│                    │  LlmService  │                         │
-│                    │ + WebSearch  │                         │
-│                    └──────────────┘                         │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                       Worker Service                       │
+│                   (BackgroundService loop)                 │
+├────────────────────────────────────────────────────────────┤
+│                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ EmailService │  │ TweetService │  │   XService   │      │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤      │
+│  │ - GetUnread  │  │ - Generate   │  │ - PostTweet  │      │
+│  │ - GetThreads │  │ - Refine     │  │              │      │
+│  │ - Reply      │  │              │  │              │      │
+│  │ - Archive    │  │      ▲       │  │              │      │
+│  └──────────────┘  └──────┼───────┘  └──────────────┘      │
+│                           │                                │
+│                    ┌──────┴───────┐                        │
+│                    │  LlmService  │                        │
+│                    │ + WebSearch  │                        │
+│                    └──────────────┘                        │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### Service Responsibilities
@@ -117,7 +117,7 @@ Reply to any tweet thread with:
 - Refine based on user feedback
 
 **LlmService**
-- Wrapper around Anthropic SDK
+- Wrapper around Azure OpenAI SDK (with Ollama fallback)
 - Web search tool for topic research
 - Prompt engineering for viral tweets
 
@@ -127,7 +127,7 @@ Reply to any tweet thread with:
 - Retry with exponential backoff
 
 **Worker (Orchestrator)**
-- Runs on timer (every 5 minutes)
+- Runs on timer (configurable, default 30 seconds)
 - Main loop:
   1. Process new topic emails → research & generate tweet → reply
   2. Process command replies → /post, /reject, or refine
@@ -135,7 +135,7 @@ Reply to any tweet thread with:
 ### Main Loop Pseudocode
 
 ```
-every 5 minutes:
+every poll interval:
     # Handle new topic requests
     newTopics = EmailService.GetUnread()
     for each topic:
@@ -162,36 +162,6 @@ every 5 minutes:
 
 ---
 
-## Components to Build
-
-### 1. Email Service
-- [ ] IMAP client for reading inbox
-- [ ] SMTP client for sending replies
-- [ ] Thread tracking (by Message-ID / References headers)
-- [ ] Archive management
-
-### 2. Tweet Service
-- [ ] Topic research via web search
-- [ ] Punchy tweet generation (viral, growth-focused)
-- [ ] Refinement based on feedback
-
-### 3. LLM Service
-- [ ] Anthropic SDK integration
-- [ ] Web search tool usage
-- [ ] Prompt for viral tweet style
-
-### 4. X/Twitter Service
-- [ ] OAuth 1.0a authentication
-- [ ] Tweet posting (v2 endpoint)
-- [ ] Retry with backoff
-
-### 5. Worker
-- [ ] 5-minute polling loop
-- [ ] New topic processing
-- [ ] Command routing
-
----
-
 ## Tweet Style Guidelines
 
 The LLM is prompted to generate tweets that:
@@ -201,6 +171,60 @@ The LLM is prompted to generate tweets that:
 - Avoid generic platitudes
 - Use active voice
 - Create engagement (replies, retweets)
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- .NET 10 SDK
+- Email account with IMAP/SMTP access (e.g., Gmail with App Password)
+- Azure OpenAI endpoint and API key (or Ollama for local LLM)
+- X/Twitter API credentials (OAuth 1.0a)
+
+### Configuration
+
+Copy `appsettings.json` and configure:
+
+```json
+{
+  "Agent": {
+    "ImapServer": "imap.gmail.com",
+    "ImapPort": 993,
+    "SmtpServer": "smtp.gmail.com",
+    "SmtpPort": 465,
+    "EmailUsername": "your-email@gmail.com",
+    "EmailPassword": "your-app-password",
+    "LlmProvider": "Azure",
+    "AzureOpenAIEndpoint": "https://your-endpoint.openai.azure.com",
+    "AzureOpenAIKey": "your-api-key",
+    "AzureOpenAIDeployment": "gpt-4o",
+    "TwitterApiKey": "...",
+    "TwitterApiSecret": "...",
+    "TwitterAccessToken": "...",
+    "TwitterAccessTokenSecret": "..."
+  }
+}
+```
+
+### Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the project |
+| `make run` | Run the agent |
+| `make test` | Run all tests |
+| `make clean` | Clean build artifacts |
+| `make restore` | Restore NuGet packages |
+
+Or use dotnet CLI directly:
+
+```bash
+dotnet build
+dotnet run --project Follower
+dotnet test
+```
 
 ---
 

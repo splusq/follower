@@ -118,42 +118,6 @@ public class LlmService : ILlmService
         return result;
     }
 
-    private async Task<string> ShortenTweetAsync(string tweet, CancellationToken cancellationToken)
-    {
-        var prompt = $"""
-            This tweet is too long ({tweet.Length} chars). Shorten to under 250 characters while keeping the punch.
-
-            Original: {tweet}
-
-            Write ONLY the shortened tweet. No quotes, no explanation.
-            """;
-
-        string result;
-        if (_chatClient != null)
-        {
-            var response = await _chatClient.CompleteChatAsync(
-                [new UserChatMessage(prompt)],
-                cancellationToken: cancellationToken
-            );
-            result = response.Value.Content[0].Text.Trim();
-        }
-        else
-        {
-            result = await CallAzureResponsesApiAsync(prompt, enableWebSearch: false, cancellationToken);
-        }
-
-        result = result.Trim('"', '"', '"', '\'');
-
-        // If still too long after retry, truncate at last sentence/space before 280
-        if (result.Length > 280)
-        {
-            _logger.LogWarning("Tweet still too long after shortening ({Length}), truncating", result.Length);
-            result = TruncateTweet(result);
-        }
-
-        return result;
-    }
-
     private static string CleanTweet(string tweet)
     {
         // Remove quotes

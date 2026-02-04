@@ -15,6 +15,22 @@ Human-in-the-loop approval ensures you stay in control while the agent does the 
 
 ---
 
+## Build Status
+
+![.NET](https://github.com/splusq/follower/workflows/.NET/badge.svg?branch=master)
+
+**Branch Protection:** The `master` branch is protected and requires all status checks to pass before merging. This ensures code quality and prevents broken builds from being merged.
+
+👉 **[Setup Guide: Enable Branch Protection](.github/SETUP-BRANCH-PROTECTION.md)** (5 minutes)
+
+### Required Checks
+- ✅ Build must pass (via GitHub Actions)
+- ✅ All tests must pass
+
+See [`.github/branch-protection.yml`](.github/branch-protection.yml) for the complete branch protection configuration.
+
+---
+
 ## Architecture
 
 ### Email as State Store
@@ -225,6 +241,39 @@ dotnet build
 dotnet run --project Follower
 dotnet test
 ```
+
+---
+
+## Contributing
+
+### Pull Request Process
+
+1. **Create a feature branch** from `master`
+2. **Make your changes** with clear, focused commits
+3. **Ensure all checks pass** locally:
+   ```bash
+   make build
+   make test
+   ```
+4. **Submit a pull request** to `master`
+5. **Wait for CI/CD checks** - The build and tests must pass before merging
+6. **Address any review feedback** if applicable
+
+### Branch Protection
+
+The `master` branch is protected with the following rules:
+
+- ✅ **Required status checks:** `build` job must pass
+- ✅ **Up-to-date branches:** PRs must be up to date with master
+- ❌ **No force pushes** allowed
+- ❌ **No branch deletion** allowed
+
+These protections ensure that:
+- All code merged to `master` builds successfully
+- All tests pass before merging
+- The build is never broken on the main branch
+
+For detailed configuration, see [`.github/branch-protection.yml`](.github/branch-protection.yml).
 
 ---
 

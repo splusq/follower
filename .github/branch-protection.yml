@@ -1,0 +1,57 @@
+# Branch Protection Rules Configuration
+# 
+# This file documents the recommended branch protection settings for the master branch.
+# These settings should be applied in GitHub repository settings:
+# Settings → Branches → Branch protection rules → Add rule
+#
+# Reference: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+
+branch_protection_rules:
+  - branch: master
+    protection:
+      # Require pull request reviews before merging
+      required_pull_request_reviews:
+        required_approving_review_count: 0  # Set to 1 or higher if you want code reviews
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: false
+      
+      # Require status checks to pass before merging
+      required_status_checks:
+        strict: true  # Require branches to be up to date before merging
+        contexts:
+          - "build"  # This must match the job name in .github/workflows/dotnet.yml
+      
+      # Enforce restrictions
+      enforce_admins: false  # Set to true to apply rules to administrators as well
+      required_linear_history: false
+      allow_force_pushes: false
+      allow_deletions: false
+      
+      # Additional settings
+      required_conversation_resolution: false
+      lock_branch: false
+      allow_fork_syncing: true
+
+# How to Apply These Settings:
+# ============================
+# 
+# Via GitHub Web Interface:
+# 1. Go to your repository on GitHub
+# 2. Click "Settings" → "Branches"
+# 3. Click "Add branch protection rule"
+# 4. Enter "master" as the branch name pattern
+# 5. Check "Require status checks to pass before merging"
+# 6. Search for and select "build" in the status checks list
+# 7. Check "Require branches to be up to date before merging"
+# 8. Click "Create" or "Save changes"
+#
+# Via GitHub CLI (gh):
+# gh api repos/:owner/:repo/branches/master/protection \
+#   --method PUT \
+#   --field required_status_checks='{"strict":true,"contexts":["build"]}' \
+#   --field enforce_admins=false \
+#   --field required_pull_request_reviews=null \
+#   --field restrictions=null
+#
+# Via GitHub API:
+# See https://docs.github.com/en/rest/branches/branch-protection

@@ -21,6 +21,8 @@ Human-in-the-loop approval ensures you stay in control while the agent does the 
 
 **Branch Protection:** The `master` branch is protected and requires all status checks to pass before merging. This ensures code quality and prevents broken builds from being merged.
 
+👉 **[Setup Guide: Enable Branch Protection](.github/SETUP-BRANCH-PROTECTION.md)** (5 minutes)
+
 ### Required Checks
 - ✅ Build must pass (via GitHub Actions)
 - ✅ All tests must pass
